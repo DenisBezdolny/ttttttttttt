@@ -325,9 +325,76 @@ namespace Payment.BLL.Services.Payment
             }
         }
 
-        public Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, UserDto user, SepaPaymentRequest sepaRequest)
+        public async Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, SepaPaymentRequest sepaRequest)
         {
-            throw new NotImplementedException();
+            try
+            {
+                if (string.IsNullOrEmpty(sepaRequest.Iban))
+                {
+                    throw new ArgumentException("IBAN is missing.");
+                }
+
+                var options = new PaymentIntentCreateOptions
+                {
+                    Amount = (long)(basket.Amount * 100),
+                    Currency = "eur",
+                    PaymentMethodTypes = new List<string> { "sepa_debit" }
+                };
+
+                var paymentIntent = await _paymentIntentService.CreateAsync(options);
+
+                var confirmOptions = new PaymentIntentConfirmOptions
+                {
+                    PaymentMethodData = new PaymentIntentPaymentMethodDataOptions
+                    {
+                        Type = "sepa_debit",
+                        SepaDebit = new PaymentIntentPaymentMethodDataSepaDebitOptions
+                        {
+                            Iban = sepaRequest.Iban
+                        },
+                        BillingDetails = new PaymentIntentPaymentMethodDataBillingDetailsOptions
+                        {
+                            Email = basket.Basket.User.Email,
+                            Name = basket.Basket.User.FirstName
+                        }
+                    },
+                    MandateData = new PaymentIntentMandateDataOptions
+                    {
+                        CustomerAcceptance = new PaymentIntentMandateDataCustomerAcceptanceOptions
+                        {
+                            Type = "online",
+                            Online = new PaymentIntentMandateDataCustomerAcceptanceOnlineOptions
+                            {
+                                IpAddress = sepaRequest.IpAddress,
+                                UserAgent = sepaRequest.UserAgent
+                            }
+                        }
+                    }
+                };
+
+                var confirmedPaymentIntent = await _paymentIntentService.ConfirmAsync(paymentIntent.Id, confirmOptions);
+
+                if (confirmedPaymentIntent.Status == "succeeded")
+                {
+                    _logger.LogInformation("SEPA payment succeeded for Basket ID: {BasketId}", basket.BasketId);
+                    return $"Payment completed successfully. Transaction ID: {confirmedPaymentIntent.Id}";
+                }
+                else if (confirmedPaymentIntent.Status == "processing")
+                {
+                    _logger.LogInformation("SEPA payment is processing for Basket ID: {BasketId}", basket.BasketId);
+                    return $"Payment is processing. Transaction ID: {confirmedPaymentIntent.Id}";
+                }
+                else
+                {
+                    _logger.LogWarning("SEPA payment failed for Basket ID: {BasketId}, Status: {Status}", basket.BasketId, confirmedPaymentIntent.Status);
+                    return "Payment failed.";
+                }
+            }
+            catch (StripeException ex)
+            {
+                _logger.LogError(ex, "Error processing SEPA payment for Basket ID: {BasketId}", basket.BasketId);
+                return $"Error processing payment: {ex.Message}";
+            }
         }
     }
 }

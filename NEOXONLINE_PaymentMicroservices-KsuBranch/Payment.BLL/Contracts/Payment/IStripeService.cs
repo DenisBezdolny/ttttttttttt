@@ -26,7 +26,7 @@ namespace Payment.BLL.Contracts.Payment
         Task<Product> UpdateStripeProductAsync(string id, ProductCreationDto productDto);
 
         // Новые методы для поддержки Google Pay и SEPA платежей
-        Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, UserDto user, SepaPaymentRequest sepaRequest);
+        Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, SepaPaymentRequest sepaRequest);
         Task<string> ProcessGooglePayPaymentAsync(PaymentBasket basket, string googlePayToken);
     }
 }
