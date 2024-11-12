@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Payment.BLL.Contracts.Payment;
 using Payment.BLL.DTOs;
 using Payment.BLL.Services.PayProduct;
 using Payment.Domain;
+using Payment.Domain.ECommerce;
 using Payment.Domain.Identity;
 using Stripe;
 using Stripe.Checkout;
@@ -25,8 +27,11 @@ namespace Payment.BLL.Services.Payment
         private readonly CustomerService _customerService;
         private readonly RefundService _refundService;
         private readonly PaymentIntentService _paymentIntentService;
+        private readonly ChargeService _chargeService;
+        private readonly ILogger<StripeService> _logger;
 
-        public StripeService()
+
+        public StripeService(ChargeService chargeService, ILogger<StripeService> logger)
         {
             _productService = new Stripe.ProductService();
             _priceService = new PriceService();
@@ -34,6 +39,8 @@ namespace Payment.BLL.Services.Payment
             _customerService = new CustomerService();
             _refundService = new RefundService();
             _paymentIntentService = new PaymentIntentService();
+            _chargeService = chargeService;
+            _logger = logger;
         }
 
         public async Task<StripeList<Product>> GetAllStripeProductsAsync()
@@ -78,10 +85,10 @@ namespace Payment.BLL.Services.Payment
 
         public async Task<Stripe.Product> UpdateStripeProductAsync(string id, ProductCreationDto productDto)
         {
-            var productUpdateOptions = new ProductUpdateOptions 
-            { 
+            var productUpdateOptions = new ProductUpdateOptions
+            {
                 Name = productDto.Name,
-                Description =  productDto.Description,
+                Description = productDto.Description,
                 Metadata = new Dictionary<string, string>
                 {
                     { "CategoryName", productDto.CategoryName }
@@ -172,7 +179,7 @@ namespace Payment.BLL.Services.Payment
                 SuccessUrl = "https://www.meme-arsenal.com/memes/a2c78af09e451831566e7e90c4269a5c.jpg",
                 CancelUrl = "https://cs14.pikabu.ru/images/previews_comm/2023-10_2/1696889858182579745.jpg",
             };
-            Session session = await _sessionService.CreateAsync(options);            
+            Session session = await _sessionService.CreateAsync(options);
             return session.Url;
         }
 
@@ -182,7 +189,7 @@ namespace Payment.BLL.Services.Payment
             {
                 Product = stripeProductId
             })).FirstOrDefault();
-            if(price != null)
+            if (price != null)
             {
                 return price.Id;
             }
@@ -190,7 +197,7 @@ namespace Payment.BLL.Services.Payment
         }
 
         public Customer CreateStripeCustomer(UserDto userDto)
-        {            
+        {
             var customerOptions = new CustomerCreateOptions
             {
                 Email = userDto.Email,
@@ -201,7 +208,7 @@ namespace Payment.BLL.Services.Payment
                     Line1 = userDto.Address,
                     City = userDto.City,
                     Country = userDto.Сountry
-                },                
+                },
             };
             var customer = _customerService.Create(customerOptions);
 
@@ -264,10 +271,63 @@ namespace Payment.BLL.Services.Payment
                     { "TransactionType", "Donation" }
                 }
             };
-            
+
             PaymentIntent intent = await _paymentIntentService.CreateAsync(options);
 
             return intent.ClientSecret;
+        }
+
+        public async Task<string> ProcessGooglePayPaymentAsync(PaymentBasket basket, string googlePayToken)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(googlePayToken))
+                {
+                    return "Google Pay token is missing.";
+                }
+
+                if (basket.Amount <= 0)
+                {
+                    return "Invalid payment amount.";
+                }
+
+                var options = new ChargeCreateOptions
+                {
+                    Amount = (long)(basket.Amount * 100), // Convert amount to cents
+                    Currency = "eur",
+                    Source = googlePayToken,
+                    Description = $"Google Pay payment for Basket ID: {basket.BasketId} on {DateTime.UtcNow}"
+                };
+
+                var charge = await _chargeService.CreateAsync(options);
+
+                // Check status of the charge and return the appropriate message
+                if (charge.Status == "succeeded")
+                {
+                    _logger.LogInformation("Google Pay payment succeeded for Basket ID: {BasketId}", basket.BasketId);
+                    return $"Payment completed successfully. Transaction ID: {charge.Id}";
+                }
+                else if (charge.Status == "pending" || charge.Status == "processing")
+                {
+                    _logger.LogInformation("Google Pay payment is processing for Basket ID: {BasketId}", basket.BasketId);
+                    return $"Payment is processing. Transaction ID: {charge.Id}, Status: {charge.Status}";
+                }
+                else
+                {
+                    _logger.LogWarning("Google Pay payment failed for Basket ID: {BasketId}, Status: {Status}", basket.BasketId, charge.Status);
+                    return $"Payment failed. Status: {charge.Status}";
+                }
+            }
+            catch (StripeException ex)
+            {
+                _logger.LogError(ex, "Error processing Google Pay payment for Basket ID: {BasketId}", basket.BasketId);
+                return $"Error processing payment: {ex.Message}";
+            }
+        }
+
+        public Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, UserDto user, SepaPaymentRequest sepaRequest)
+        {
+            throw new NotImplementedException();
         }
     }
 }
