@@ -10,7 +10,10 @@ using Payment.Domain.ECommerce;
 using Payment.Domain.PayProduct;
 using Stripe;
 using Stripe.Checkout;
+using Stripe.FinancialConnections;
+using Stripe.Terminal;
 using Stripe.V2;
+using static Paymant_Module_NEOXONLINE.Controllers.CurrancyLayer.CurrencyLayerController;
 
 namespace Paymant_Module_NEOXONLINE.Controllers.Payment
 {
@@ -179,13 +182,24 @@ namespace Paymant_Module_NEOXONLINE.Controllers.Payment
             try
             {
                 return Ok(await _stripeService.CreateRefundAsync(paymentIntentId, amount, reason));
-
             }
             catch (StripeException ex)
             {
                 return StatusCode(500, ex.Message);
             }
+        }
 
+        [HttpPost("donate")]
+        public async Task<IActionResult> Donate(decimal amount, string currency, string customerId)
+        {
+            if (amount <= 0)
+            {
+                return BadRequest("Donation amount must be greater than zero.");
+            }
+
+            var secret = _stripeService.CreateDonationAsync(amount, currency, customerId);
+
+            return Ok(new { clientSecret = secret });
         }
 
         [HttpPost("StripeWebhook")]
@@ -205,7 +219,7 @@ namespace Paymant_Module_NEOXONLINE.Controllers.Payment
 
                 if (stripeEvent.Type == EventTypes.CheckoutSessionCompleted)
                 {
-                    var session = stripeEvent.Data.Object as Session;
+                    var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
                     var transaction = new StripeTransaction
                     {
                         StripeSessionId = session?.Id,
@@ -255,6 +269,32 @@ namespace Paymant_Module_NEOXONLINE.Controllers.Payment
                     var charge = stripeEvent.Data.Object as Charge;
                     Console.WriteLine($"Charge refunded: {charge.Id}");
                     //todo add refund info to db 
+                }
+                else if (stripeEvent.Type == EventTypes.PaymentIntentSucceeded)
+                {
+                    var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
+
+                    if (paymentIntent.Metadata.TryGetValue("TransactionType", out var transactionType) && transactionType == "Donation")
+                    {
+                        var donation = new StripeDonation
+                        {
+                            PaymentIntentId = paymentIntent.Id,
+                            Amount = paymentIntent.Amount / 100m,
+                            CustomerId = paymentIntent.CustomerId,
+                            Currency = paymentIntent.Currency,
+                            CreatedAt = DateTime.UtcNow,
+                            IsSuccessful = true
+                        };
+                        _unitOfWork.GetRepository<StripeDonation>().Create(donation);
+                        await _unitOfWork.SaveShangesAsync();
+
+                        Console.WriteLine("Donation completed.");
+                    }
+                    else
+                    {
+                        // Логика для других типов транзакций
+                        Console.WriteLine("Non-donation payment completed.");
+                    }
                 }
                 else
                 {

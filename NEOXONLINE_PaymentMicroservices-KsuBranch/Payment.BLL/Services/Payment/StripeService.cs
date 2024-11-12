@@ -2,10 +2,12 @@
 using Payment.BLL.Contracts.Payment;
 using Payment.BLL.DTOs;
 using Payment.BLL.Services.PayProduct;
+using Payment.Domain;
 using Payment.Domain.Identity;
 using Stripe;
 using Stripe.Checkout;
 using Stripe.Forwarding;
+using Stripe.Terminal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,6 +24,7 @@ namespace Payment.BLL.Services.Payment
         private readonly SessionService _sessionService;
         private readonly CustomerService _customerService;
         private readonly RefundService _refundService;
+        private readonly PaymentIntentService _paymentIntentService;
 
         public StripeService()
         {
@@ -30,6 +33,7 @@ namespace Payment.BLL.Services.Payment
             _sessionService = new SessionService();
             _customerService = new CustomerService();
             _refundService = new RefundService();
+            _paymentIntentService = new PaymentIntentService();
         }
 
         public async Task<StripeList<Product>> GetAllStripeProductsAsync()
@@ -246,6 +250,24 @@ namespace Payment.BLL.Services.Payment
                 }
                 throw ex;
             }
+        }
+
+        public async Task<string> CreateDonationAsync(decimal amount, string currency, string customerId)
+        {
+            var options = new PaymentIntentCreateOptions
+            {
+                Amount = (long)(amount * 100),
+                Currency = currency,
+                Customer = customerId,
+                Metadata = new Dictionary<string, string>
+                {
+                    { "TransactionType", "Donation" }
+                }
+            };
+            
+            PaymentIntent intent = await _paymentIntentService.CreateAsync(options);
+
+            return intent.ClientSecret;
         }
     }
 }
