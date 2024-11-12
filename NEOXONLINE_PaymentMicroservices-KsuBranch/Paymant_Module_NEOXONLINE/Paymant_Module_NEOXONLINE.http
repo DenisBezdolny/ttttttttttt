@@ -1,0 +1,6 @@
+@Paymant_Module_NEOXONLINE_HostAddress = http://localhost:5191
+
+GET {{Paymant_Module_NEOXONLINE_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
