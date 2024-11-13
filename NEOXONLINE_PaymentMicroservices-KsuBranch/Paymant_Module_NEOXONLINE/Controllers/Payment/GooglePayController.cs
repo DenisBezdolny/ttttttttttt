@@ -8,11 +8,11 @@ namespace Paymant_Module_NEOXONLINE.Controllers.Payment
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class PaymentController : ControllerBase
+    public class GooglePayController : ControllerBase
     {
         private readonly IStripeService _stripeService;
 
-        public PaymentController(IStripeService stripeService)
+        public GooglePayController(IStripeService stripeService)
         {
             _stripeService = stripeService;
         }
