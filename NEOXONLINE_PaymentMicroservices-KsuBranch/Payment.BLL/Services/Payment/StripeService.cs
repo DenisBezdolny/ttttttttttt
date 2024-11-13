@@ -448,7 +448,92 @@ namespace Payment.BLL.Services.Payment
             }
         }
 
+        public async Task<string> CreateSepaDonationAsync(decimal amount, string currency, SepaPaymentRequest sepaRequest, UserDto user)
+        {
+            try
+            {
+                if (amount <= 0)
+                {
+                    return "Donation amount must be greater than zero.";
+                }
 
+                if (string.IsNullOrEmpty(sepaRequest.Iban))
+                {
+                    return "IBAN is missing.";
+                }
+
+                var options = new PaymentIntentCreateOptions
+                {
+                    Amount = (long)(amount * 100), // Convert amount to cents
+                    Currency = currency,
+                    PaymentMethodTypes = new List<string> { "sepa_debit" },
+                    Metadata = new Dictionary<string, string>
+                {
+                { "DonationType", "SEPA" }
+                }
+                };
+
+                var paymentIntent = await _paymentIntentService.CreateAsync(options);
+
+                var confirmOptions = new PaymentIntentConfirmOptions
+                {
+                    PaymentMethodData = new PaymentIntentPaymentMethodDataOptions
+                    {
+                        Type = "sepa_debit",
+                        SepaDebit = new PaymentIntentPaymentMethodDataSepaDebitOptions
+                        {
+                            Iban = sepaRequest.Iban
+                        },
+                        BillingDetails = new PaymentIntentPaymentMethodDataBillingDetailsOptions
+                        {
+                            Email = user.Email,
+                            Name = user.Name,
+                            Address = new AddressOptions
+                            {
+                                Line1 = user.Address,
+                                City = user.City,
+                                Country = user.Сountry
+                            }
+                        }
+                    },
+                    MandateData = new PaymentIntentMandateDataOptions
+                    {
+                        CustomerAcceptance = new PaymentIntentMandateDataCustomerAcceptanceOptions
+                        {
+                            Type = "online",
+                            Online = new PaymentIntentMandateDataCustomerAcceptanceOnlineOptions
+                            {
+                                IpAddress = sepaRequest.IpAddress,
+                                UserAgent = sepaRequest.UserAgent
+                            }
+                        }
+                    }
+                };
+
+                var confirmedPaymentIntent = await _paymentIntentService.ConfirmAsync(paymentIntent.Id, confirmOptions);
+
+                if (confirmedPaymentIntent.Status == "succeeded")
+                {
+                    _logger.LogInformation("SEPA donation succeeded. Transaction ID: {TransactionId}", confirmedPaymentIntent.Id);
+                    return $"Donation completed successfully. Transaction ID: {confirmedPaymentIntent.Id}";
+                }
+                else if (confirmedPaymentIntent.Status == "processing")
+                {
+                    _logger.LogInformation("SEPA donation is processing. Transaction ID: {TransactionId}", confirmedPaymentIntent.Id);
+                    return $"Donation is processing. Transaction ID: {confirmedPaymentIntent.Id}";
+                }
+                else
+                {
+                    _logger.LogWarning("SEPA donation failed. Status: {Status}", confirmedPaymentIntent.Status);
+                    return "Donation failed.";
+                }
+            }
+            catch (StripeException ex)
+            {
+                _logger.LogError(ex, "Error processing SEPA donation.");
+                return $"Error processing donation: {ex.Message}";
+            }
+        }
 
 
 
