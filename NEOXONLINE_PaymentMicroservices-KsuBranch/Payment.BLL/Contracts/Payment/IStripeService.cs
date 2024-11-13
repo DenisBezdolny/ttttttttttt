@@ -28,5 +28,8 @@ namespace Payment.BLL.Contracts.Payment
         // Новые методы для поддержки Google Pay и SEPA платежей
         Task<string> ProcessSepaPaymentAsync(PaymentBasket basket, SepaPaymentRequest sepaRequest);
         Task<string> ProcessGooglePayPaymentAsync(PaymentBasket basket, string googlePayToken);
+        Task<string> CreateGooglePayDonationAsync(decimal amount, string currency, string googlePayToken);
+
+
     }
 }

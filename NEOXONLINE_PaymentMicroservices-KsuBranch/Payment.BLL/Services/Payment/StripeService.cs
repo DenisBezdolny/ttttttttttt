@@ -396,5 +396,64 @@ namespace Payment.BLL.Services.Payment
                 return $"Error processing payment: {ex.Message}";
             }
         }
+
+        public async Task<string> CreateGooglePayDonationAsync(decimal amount, string currency, string googlePayToken)
+        {
+            try
+            {
+                if (amount <= 0)
+                {
+                    return "Donation amount must be greater than zero.";
+                }
+
+                if (string.IsNullOrEmpty(googlePayToken))
+                {
+                    return "Google Pay token is missing.";
+                }
+
+                var options = new ChargeCreateOptions
+                {
+                    Amount = (long)(amount * 100), // Amount in cents
+                    Currency = currency,
+                    Source = googlePayToken,
+                    Description = "Google Pay donation",
+                    Metadata = new Dictionary<string, string>
+            {
+                { "DonationType", "GooglePay" }
+            }
+                };
+
+                var charge = await _chargeService.CreateAsync(options);
+
+                if (charge.Status == "succeeded")
+                {
+                    _logger.LogInformation("Google Pay donation succeeded. Transaction ID: {TransactionId}", charge.Id);
+                    return $"Donation completed successfully. Transaction ID: {charge.Id}";
+                }
+                else if (charge.Status == "pending" || charge.Status == "processing")
+                {
+                    _logger.LogInformation("Google Pay donation is processing. Transaction ID: {TransactionId}", charge.Id);
+                    return $"Donation is processing. Transaction ID: {charge.Id}";
+                }
+                else
+                {
+                    _logger.LogWarning("Google Pay donation failed. Status: {Status}", charge.Status);
+                    return "Donation failed.";
+                }
+            }
+            catch (StripeException ex)
+            {
+                _logger.LogError(ex, "Error processing Google Pay donation.");
+                return $"Error processing donation: {ex.Message}";
+            }
+        }
+
+
+
+
+
+
+
+
     }
 }
